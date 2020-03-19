@@ -1,0 +1,8 @@
+#!/bin/bash
+echo Creating build directory;
+mkdir build;
+cd build;
+echo Executing cmake;
+cmake ../;
+cmake --build .;
+echo Executable location: bin/particle_system;
