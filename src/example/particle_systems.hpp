@@ -3,6 +3,7 @@
 
 #include "constants.hpp"
 #include "particle_components.hpp"
+#include "user_components.hpp"
 #include <pfx/pfx.hpp>
 
 #include <cmath>
@@ -10,11 +11,11 @@
 using my_components = pfx::particle_components<position, velocity, color>;
 
 struct snow_system {
-    inline static constexpr std::size_t max_particles = 600;
+    inline static constexpr std::size_t max_particles = 1000;
     inline static constexpr int emission_rate = 50;
 
     inline static constexpr auto initial_lifetime() noexcept {
-        return std::chrono::seconds{11};
+        return std::chrono::seconds{5};
     }
 
     inline static auto initial(pfx::arg<position>) {
@@ -55,6 +56,29 @@ struct explosion {
     inline static constexpr void over_time(velocity& v, std::chrono::duration<float> const dt) {
         v.dx *= 1.001f;
         v.dy *= 1.001f;
+    }
+};
+
+struct spray_system {
+    inline static constexpr std::size_t max_particles = 100;
+    inline static constexpr int emission_rate = 30;
+    inline static constexpr auto duration = std::chrono::seconds{3};
+
+    inline static constexpr auto initial_lifetime() noexcept {
+        return std::chrono::seconds{4};
+    }
+
+    inline static auto initial(pfx::arg<position>, entt::entity const, entt::registry& reg) noexcept {
+        auto const view = reg.view<cursor_tag, position>();
+        auto const e = view.front();
+        PFX_ASSERT(e != entt::null);
+        return view.get<position>(e);
+    }
+    inline static auto initial(pfx::arg<velocity>) noexcept {
+        return velocity{frng<-10, 10>::rand(), frng<-10, 10>::rand()};
+    }
+    inline static constexpr auto initial(pfx::arg<color>) noexcept {
+        return color::yellow();
     }
 };
 

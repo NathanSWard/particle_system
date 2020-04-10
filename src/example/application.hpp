@@ -7,6 +7,7 @@
 
 #include "constants.hpp"
 #include "particle_systems.hpp"
+#include "user_components.hpp"
 #include "sdl/sdl.hpp"
 
 class application : sdl::Instance {
@@ -16,12 +17,14 @@ public:
         , win_(name, window_values::width::actual, window_values::height::actual)
         , ren_(win_) {
         SDL_RenderSetLogicalSize(ren_, window_values::width::logical, window_values::height::logical);
+        manager::init(reg_);
+        initialize_cursor(reg_);
     }
 
     void run() {
-        manager::init(reg_);
-        manager::create_emitter<snow_system>(reg_);
-        manager::create_emitter<explosion>(reg_);
+        //manager::create_emitter<snow_system>(reg_, std::chrono::seconds{3});
+        //manager::create_emitter<explosion>(reg_);
+        manager::create_emitter<spray_system>(reg_);
 
         using clock_type = std::chrono::steady_clock;
         auto current_time = clock_type::now();
@@ -39,7 +42,7 @@ public:
     }
 
 private:
-    using manager = pfx::basic_particle_system_manager<my_components, snow_system, explosion>;
+    using manager = pfx::basic_particle_system_manager<my_components, snow_system, explosion, spray_system>;
 
     void input() {
         while (SDL_PollEvent(&e_)) {
@@ -51,6 +54,16 @@ private:
                     break;
             }
         }
+
+        int x, y;
+        SDL_GetMouseState(&x, &y);
+        float const fx = float(x) / window_values::width::actual * window_values::width::logical;
+        float const fy = float(y) / window_values::height::actual * window_values::height::logical;
+        auto const view = reg_.view<cursor_tag, position>();
+        view.less([&fx, &fy](auto&& pos){
+            pos.x = fx;
+            pos.y = fy;
+        });
     }
 
     void update(std::chrono::duration<float> const dt) {

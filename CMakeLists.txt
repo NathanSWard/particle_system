@@ -7,7 +7,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
 set(DEPS_DIR ${PROJECT_SOURCE_DIR}/deps)
 include_directories(${DEPS_DIR}/entt/single_include ${DEPS_DIR}/SDL2/include ${PROJECT_SOURCE_DIR}/pfx)
 
-add_executable(particle_system src/example/main.cpp)
+add_executable(particle_system src/example/main.cpp src/example/user_components.hpp)
 
 link_directories(${DEPS_DIR}/SDL2/lib)
 set(SDL2_LIBS ${DEPS_DIR}/SDL2/lib)

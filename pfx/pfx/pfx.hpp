@@ -91,10 +91,8 @@ struct find_in_pack<T, U, Rest...> {
 };
 
 // is constexpr
-template<class Lambda, int = (Lambda {}(), 0)>
-constexpr bool is_constexpr(Lambda) { return true; }
-
-constexpr bool is_constexpr(...) { return false; }
+constexpr void _pfx_is_constexpr_helper(...) {}
+#define PFX_IS_CONSTEXPR(...) noexcept(_pfx_is_constexpr_helper(__VA_ARGS__))
 
 // has max particles
 template<class System, class = int>
@@ -201,21 +199,18 @@ inline static constexpr bool has_over_time_v = has_over_time<System, T>::value;
 
 // has constexpr lifetime
 template<class, class = int>
-struct has_constexpr_lifetime : std::false_type {};
+struct has_constexpr_lifetime : std::false_type{};
 
 template<class System>
 struct has_constexpr_lifetime<System, decltype(System::initial_lifetime(), 0)> {
-    static constexpr bool value = is_constexpr([] {
-        System::initial_lifetime();
-    });
+    static constexpr bool value = PFX_IS_CONSTEXPR(System::initial_lifetime());
 };
 
 template<class System>
 struct has_constexpr_lifetime<System, decltype(System::initial_lifetime(entt::entity{},
                                                std::declval<entt::registry&>()), 0)> {
-    static constexpr bool value = is_constexpr([] {
-        System::initial_lifetime(entt::entity{}, std::declval<entt::registry&>());
-    });
+    static constexpr bool value =
+            PFX_IS_CONSTEXPR(System::initial_lifetime(entt::entity{}, std::declval<entt::registry&>()));
 };
 
 template<class System>
@@ -449,11 +444,12 @@ private:
                                                  [[maybe_unused]] entt::registry& r) {
         using namespace internal;
         if constexpr (detail::system_initial_lifetime_v<SystemPolicy>) {
-            if constexpr (detail::has_constexpr_lifetime_v<SystemPolicy>)
-                r.replace<particle_lifetime>(particle, [](auto& l) { l.remaining = 1.f; });
+            if constexpr (detail::has_constexpr_lifetime_v<SystemPolicy>) {
+                r.replace<particle_lifetime>(particle, [](auto& l) { l.remaining = 0.f; });
+            }
             else {
                 auto const total_life = total_lifetime{detail::invoke_initial_lifetime<SystemPolicy>(emitter, r)};
-                r.replace<particle_lifetime>(particle, [](auto& l) { l.remaining = 1.f; });
+                r.replace<particle_lifetime>(particle, [](auto& l) { l.remaining = 0.f; });
                 r.replace<total_lifetime>(particle, [&](auto& l) { l.dur = total_life.dur; });
             }
         }
