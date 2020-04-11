@@ -90,6 +90,21 @@ struct find_in_pack<T, U, Rest...> {
     }();
 };
 
+// unique pack
+template<typename T, typename...>
+struct unique_pack {
+    using type = T;
+};
+
+template<typename... Ts, typename U, typename... Us>
+struct unique_pack<sink<Ts...>, U, Us...>
+        : std::conditional_t<(std::is_same_v<U, Ts> || ...)
+                , unique_pack<sink<Ts...>, Us...>
+                , unique_pack<sink<Ts..., U>, Us...>> {};
+
+template<typename... Ts>
+using unique_pack_t = typename unique_pack<sink<>, Ts...>::type;
+
 // is constexpr
 constexpr void _pfx_is_constexpr_helper(...) {}
 #define PFX_IS_CONSTEXPR(...) noexcept(_pfx_is_constexpr_helper(__VA_ARGS__))
@@ -277,7 +292,7 @@ public:
     inline static void init(entt::registry& r) {
         using namespace internal;
         init_impl<particle_t, particle_lifetime, total_lifetime, emitter_lifetime, emission_rate,
-                Systems..., Components..., particle_pool<Systems::max_particles>...>(r);
+                  Systems..., Components...>(r, detail::unique_pack_t<particle_pool<Systems::max_particles>...>{});
         (void)r.group<particle_t, Components...>(entt::exclude<inactive_t>);
         (void)r.group<particle_lifetime, total_lifetime>(entt::exclude<inactive_t>);
         (void)r.group<particle_lifetime>(entt::exclude<inactive_t>);
@@ -376,6 +391,36 @@ public:
         return emitter;
     }
 
+    template<class SystemPolicy>
+    inline static bool update_emitter_emission_rate(entt::registry& r, entt::entity const emitter, int const rate) {
+        static_assert(std::disjunction_v<std::is_same<SystemPolicy, Systems>...>);
+        static_assert(!detail::has_emission_rate_v<SystemPolicy>);
+        if (r.valid(emitter)) {
+            PFX_ASSERT(r.has<SystemPolicy>(emitter));
+            r.assign_or_replace<internal::emission_rate>(emitter,
+                    internal::emission_rate{rate, int(float(rate) * second_timer_.count())});
+            return true;
+        }
+        return false;
+    }
+
+    template<class SystemPolicy>
+    inline static bool update_emitter_lifetime(entt::registry& r, entt::entity const emitter, time_type const life) {
+        static_assert(std::disjunction_v<std::is_same<SystemPolicy, Systems>...>);
+        if (r.valid(emitter)) {
+            PFX_ASSERT(r.has<SystemPolicy>(emitter));
+            r.assign_or_replace<internal::emitter_lifetime>(emitter, life);
+            return true;
+        }
+        return false;
+    }
+
+    inline static bool valid_emitter(entt::registry& r, entt::entity const emitter) {
+        if (r.valid(emitter))
+            return ((r.has<Systems>(emitter) || ...));
+        return false;
+    }
+
     inline static void update(entt::registry& r, time_type const dt) {
         emit(r, dt);
         update_lifetime(r, dt);
@@ -409,9 +454,10 @@ public:
     }
 
 private:
-    template<class... Ts>
-    inline static void init_impl(entt::registry& r) {
+    template<class... Ts, class... Pools>
+    inline static void init_impl(entt::registry& r, detail::sink<Pools...>) {
         (r.prepare<Ts>(), ...);
+        (r.prepare<Pools>(), ...);
     }
 
     template<class System>
@@ -561,6 +607,7 @@ private:
         if (second_timer_ >= std::chrono::seconds {1}) {
             second_timer_ = std::chrono::seconds {0};
             emission_count_.fill(0);
+            r.view<internal::emission_rate>().each([](auto&& rate) { rate.emitted = 0; });
         }
     }
 
@@ -645,7 +692,8 @@ private:
     }
 
     inline static time_type second_timer_ {0};
-    inline static std::array<int, sizeof...(Systems)> emission_count_ {}; // can be optimized to only include system's w/ emission rate
+    inline static std::array<int, sizeof...(Systems)> emission_count_ {};
+        // TODO: can be optimized to only include system's w/ emission rate
 };
 
 } // namespace pfx

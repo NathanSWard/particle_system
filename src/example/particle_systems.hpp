@@ -59,26 +59,20 @@ struct explosion {
     }
 };
 
-struct spray_system {
-    inline static constexpr std::size_t max_particles = 100;
-    inline static constexpr int emission_rate = 30;
-    inline static constexpr auto duration = std::chrono::seconds{3};
-
+struct reactive_spray_system {
+    inline static constexpr std::size_t max_particles = 300;
     inline static constexpr auto initial_lifetime() noexcept {
         return std::chrono::seconds{4};
     }
 
-    inline static auto initial(pfx::arg<position>, entt::entity const, entt::registry& reg) noexcept {
-        auto const view = reg.view<cursor_tag, position>();
-        auto const e = view.front();
-        PFX_ASSERT(e != entt::null);
-        return view.get<position>(e);
+    inline static auto initial(pfx::arg<position>) noexcept {
+        return CURSOR_POSITION;
     }
     inline static auto initial(pfx::arg<velocity>) noexcept {
         return velocity{frng<-10, 10>::rand(), frng<-10, 10>::rand()};
     }
-    inline static constexpr auto initial(pfx::arg<color>) noexcept {
-        return color::yellow();
+    inline static auto initial(pfx::arg<color>) noexcept {
+        return CURSOR_COLOR;
     }
 };
 
