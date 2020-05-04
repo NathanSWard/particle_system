@@ -40,17 +40,17 @@ struct explosion {
         return std::chrono::seconds{3};
     }
 
-    inline static constexpr auto initial(pfx::arg<position>) noexcept {
-        return position{window_values::width::logical/2, window_values::height::logical/2};
+    inline static auto initial(pfx::arg<position>, entt::entity const e, entt::registry& r) noexcept {
+        return r.get<position>(e);
     }
     inline static auto initial(pfx::arg<velocity>) noexcept {
         return velocity{frng<-10, 10>::rand(), frng<-10, 10>::rand()};
     }
     inline static constexpr auto initial(pfx::arg<color>) noexcept {
-        return color::red();
+        return color::magenta();
     }
     inline static constexpr void over_lifetime(color& c, float const perc) noexcept {
-        c = color::lerp(color::red(), color::yellow(), perc);
+        c = color::lerp(color::red(), color::black(), perc);
     }
 
     inline static constexpr void over_time(velocity& v, std::chrono::duration<float> const dt) {
@@ -58,6 +58,12 @@ struct explosion {
         v.dy *= 1.001f;
     }
 };
+
+template<class Manager>
+inline void create_explosion(entt::registry& r, position const pos) {
+    auto const e = Manager::template create_emitter<explosion>(r);
+    r.assign<position>(e, pos);
+}
 
 struct reactive_spray_system {
     inline static constexpr std::size_t max_particles = 300;

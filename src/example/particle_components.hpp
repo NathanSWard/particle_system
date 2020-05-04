@@ -34,6 +34,7 @@ struct color {
     inline static constexpr color red() noexcept { return {1.f, 0.f, 0.f, 1.f}; };
     inline static constexpr color white() noexcept { return {1.f, 1.f, 1.f, 1.f}; };
     inline static constexpr color yellow() noexcept { return {1.f, 0.92f, 0.016f, 1.f}; };
+    inline static constexpr color orange() noexcept { return {1.f, 0.647f, 0.f, 1.f}; };
 
     inline static constexpr color lerp(color const& a, color const& b, float const t) noexcept {
         return {

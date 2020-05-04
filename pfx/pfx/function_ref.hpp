@@ -6,14 +6,16 @@
 #include <memory>
 #include <type_traits>
 
+namespace pfx {
+
 template<typename Fn>
 class function_ref;
 
 template<typename R, typename ...Args>
 class function_ref<R(Args...)> {
-    R (*cb_)(std::intptr_t callable, Args... args) = nullptr;
+    R (* cb_)(std::intptr_t callable, Args... args) = nullptr;
 
-    std::intptr_t ptr_ {};
+    std::intptr_t ptr_{};
 
     template<typename Fn>
     static R callback_fn(std::intptr_t callable, Args... args) {
@@ -28,7 +30,7 @@ public:
     template<typename Fn, std::enable_if_t<!std::is_same_v<std::decay_t<Fn>, function_ref>, int> = 0>
     function_ref(Fn&& callable) noexcept
             : cb_(callback_fn<std::remove_reference_t<Fn>>)
-            , ptr_(reinterpret_cast<std::intptr_t>(std::addressof(callable))) {
+              , ptr_(reinterpret_cast<std::intptr_t>(std::addressof(callable))) {
         static_assert(std::is_invocable_r_v<R, Fn, Args...>);
     }
 
@@ -38,5 +40,7 @@ public:
 
     constexpr explicit operator bool() const noexcept { return cb_; }
 };
+
+} // namespace pfx
 
 #endif //FUNCTION_REF_HPP

@@ -8,6 +8,7 @@
 #include <type_traits>
 
 #include "debug.hpp"
+#include "function_ref.hpp"
 #include "ring_buffer.hpp"
 
 namespace pfx {
@@ -405,11 +406,70 @@ public:
     }
 
     template<class SystemPolicy>
+    inline static bool update_emitter_emission_rate(entt::registry& r, entt::entity const emitter,
+            function_ref<int(int)> fn) {
+        static_assert(std::disjunction_v<std::is_same<SystemPolicy, Systems>...>);
+        static_assert(!detail::has_emission_rate_v<SystemPolicy>);
+        if (r.valid(emitter)) {
+            PFX_ASSERT(r.has<SystemPolicy>(emitter));
+            auto& emission = r.get_or_assign<internal::emission_rate>(emitter, 0, 0);
+            emission.rate = fn(emission.rate);
+            emission.emitted = int(float(emission.rate) * second_timer_.count());
+            return true;
+        }
+        return false;
+    }
+
+    template<class SystemPolicy>
     inline static bool update_emitter_lifetime(entt::registry& r, entt::entity const emitter, time_type const life) {
         static_assert(std::disjunction_v<std::is_same<SystemPolicy, Systems>...>);
         if (r.valid(emitter)) {
             PFX_ASSERT(r.has<SystemPolicy>(emitter));
             r.assign_or_replace<internal::emitter_lifetime>(emitter, life);
+            return true;
+        }
+        return false;
+    }
+
+    template<class SystemPolicy, class Rep1, class Period1, class Rep2, class Period2>
+    inline static bool update_emitter_lifetime(entt::registry& r, entt::entity const emitter,
+            function_ref<std::chrono::duration<Rep1, Period1>(std::chrono::duration<Rep2, Period2>)> fn) {
+        static_assert(std::disjunction_v<std::is_same<SystemPolicy, Systems>...>);
+        if (r.valid(emitter)) {
+            PFX_ASSERT(r.has<SystemPolicy>(emitter));
+            auto& lifetime = r.get_or_assign<internal::emitter_lifetime>(emitter, std::chrono::seconds(0));
+            lifetime.dur = std::chrono::duration_cast<time_type>(fn(lifetime.dur));
+            return true;
+        }
+        return false;
+    }
+
+    template<class SystemPolicy>
+    inline static bool activate_emitter(entt::registry& r, entt::entity const emitter) {
+        if (r.valid(emitter)) {
+            PFX_ASSERT(r.has<SystemPolicy>(emitter));
+            r.remove_if_exists<internal::inactive_t>(emitter);
+            return true;
+        }
+        return false;
+    }
+
+    template<class SystemPolicy>
+    inline static bool deactivate_emitter(entt::registry& r, entt::entity const emitter) {
+        if (r.valid(emitter)) {
+            PFX_ASSERT(r.has<SystemPolicy>(emitter));
+            r.assign_or_replace<internal::inactive_t>(emitter);
+            return true;
+        }
+        return false;
+    }
+
+    template<class SystemPolicy>
+    inline static bool destroy_emitter(entt::registry& r, entt::entity const emitter) {
+        if (r.valid(emitter)) {
+            PFX_ASSERT(r.has<SystemPolicy>(emitter));
+            r.assign_or_replace<internal::inactive_t>(emitter);
+            r.assign_or_replace<internal::destroy_t>(emitter);
             return true;
         }
         return false;
@@ -574,7 +634,7 @@ private:
         int const particle_count = int((float)SystemPolicy::emission_rate * second_timer_.count()) - emitted;
         if (particle_count > 0) {
             emitted += particle_count;
-            auto emitters = r.view<SystemPolicy, internal::particle_pool<SystemPolicy::max_particles>>();
+            auto emitters = r.view<SystemPolicy, internal::particle_pool<SystemPolicy::max_particles>>(entt::exclude<internal::inactive_t>);
             emitters.less([&](auto const id, auto& pool) {
                 emit_rate_impl<SystemPolicy>(id, r, pool, particle_count);
             });
@@ -583,7 +643,7 @@ private:
 
     template<class SystemPolicy>
     inline static void emit_dynamic_rate(entt::registry& r) {
-        auto emitters = r.view<SystemPolicy, internal::particle_pool<SystemPolicy::max_particles>, internal::emission_rate>();
+        auto emitters = r.view<SystemPolicy, internal::particle_pool<SystemPolicy::max_particles>, internal::emission_rate>(entt::exclude<internal::inactive_t>);
         emitters.less([&](auto const id, auto& pool, auto& rate) {
             int const particle_count = int((float)rate.rate * second_timer_.count()) - rate.emitted;
             if (particle_count > 0) {
@@ -615,7 +675,7 @@ private:
     inline static void update_over_time_impl2([[maybe_unused]] entt::registry& r,
                                               [[maybe_unused]] time_type const dt) {
         if constexpr (detail::has_over_time_v<System, C>) {
-            auto view = r.view<System, particle_tag, C>(entt::exclude<inactive_tag>);
+            auto view = r.view<System, particle_tag, C>(entt::exclude<internal::inactive_t>);
             view.less([&dt](auto& c) {
                 System::over_time(c, dt);
             });
@@ -630,7 +690,7 @@ private:
     template<class System, class C>
     inline static void update_over_lifetime_impl2([[maybe_unused]] entt::registry& r) {
         if constexpr (detail::has_over_lifetime_v<System, C>) {
-            auto group = r.view<System, particle_tag, internal::particle_lifetime, C>(entt::exclude<inactive_tag>);
+            auto group = r.view<System, particle_tag, internal::particle_lifetime, C>(entt::exclude<internal::inactive_t>);
             group.less([](auto const& life, auto& c){
                 System::over_lifetime(c, life.remaining);
             });
@@ -643,16 +703,24 @@ private:
     }
 
     template<class System>
+    inline static void destroy_emitters_impl(entt::registry& r) {
+        auto emitters = r.view<System, internal::inactive_t, internal::destroy_t, internal::particle_pool<System::max_particles>>();
+        emitters.less([&](auto const e, auto& pool) {
+            for (auto&& particle : pool.pool)
+                r.assign<internal::destroy_t>(particle);
+        });
+    }
+
+    template<class System>
     inline static void update_lifetime_impl(entt::registry& r, time_type const dt) {
         using namespace internal;
 
-        auto emitters = r.view<System, emitter_lifetime, internal::particle_pool<System::max_particles>>();
+        auto emitters = r.view<System, emitter_lifetime, internal::particle_pool<System::max_particles>>(entt::exclude<internal::inactive_t>);
         emitters.less([&](auto const e, auto& life, auto& pool){
             life.dur -= dt;
             if (life.dur <= std::chrono::seconds{0}) {
-                for (auto&& particle : pool.pool)
-                    r.assign<destroy_t>(particle);
-                r.destroy(e);
+                r.assign<inactive_t>(e);
+                r.assign<destroy_t>(e);
             }
         });
 
@@ -677,8 +745,9 @@ private:
 
     inline static void update_lifetime(entt::registry& r, time_type const dt) {
         (update_lifetime_impl<Systems>(r, dt), ...);
-        auto particles = r.view<internal::inactive_t, internal::destroy_t>();
-        particles.less([&r](auto const e){
+        (destroy_emitters_impl<Systems>(r), ...);
+        auto entities = r.view<internal::inactive_t, internal::destroy_t>();
+        entities.less([&r](auto const e){
             r.destroy(e);
         });
     }

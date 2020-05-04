@@ -21,9 +21,8 @@ public:
     }
 
     void run() {
-        //manager::create_emitter<snow_system>(reg_, std::chrono::seconds{3});
-        //manager::create_emitter<explosion>(reg_);
-        emitters_.push_back(manager::create_emitter<reactive_spray_system>(reg_, 30));
+        spray_emitter_ = manager::create_emitter<reactive_spray_system>(reg_, 30);
+        manager::deactivate_emitter<reactive_spray_system>(reg_, spray_emitter_);
 
         using clock_type = std::chrono::steady_clock;
         auto current_time = clock_type::now();
@@ -41,13 +40,31 @@ public:
     }
 
 private:
-    using manager = pfx::basic_particle_system_manager<my_components, reactive_spray_system>;
+    using manager = pfx::basic_particle_system_manager<my_components, reactive_spray_system, explosion, snow_system>;
 
     void input() {
+
+        // update mouse position
+        int x, y;
+        SDL_GetMouseState(&x, &y);
+        float const fx = float(x) / window_values::width::actual * window_values::width::logical;
+        float const fy = float(y) / window_values::height::actual * window_values::height::logical;
+        CURSOR_POSITION = {fx, fy};
+
         while (SDL_PollEvent(&e_)) {
             switch (e_.type) {
                 case SDL_QUIT:
                     running_ = false;
+                    break;
+                case SDL_MOUSEBUTTONDOWN:
+                    if (e_.button.button == SDL_BUTTON_LEFT)
+                        manager::activate_emitter<reactive_spray_system>(reg_, spray_emitter_);
+                    else if (e_.button.button == SDL_BUTTON_RIGHT)
+                        create_explosion<manager>(reg_, CURSOR_POSITION);
+                    break;
+                case SDL_MOUSEBUTTONUP:
+                    if (e_.button.button == SDL_BUTTON_LEFT)
+                        manager::deactivate_emitter<reactive_spray_system>(reg_, spray_emitter_);
                     break;
                 default:
                     break;
@@ -58,22 +75,37 @@ private:
 
         // check if user changed emission rate
         if (key_array[SDL_SCANCODE_UP])
-            manager::update_emitter_emission_rate<reactive_spray_system>(reg_, emitters_.front(), 60);
+            manager::update_emitter_emission_rate<reactive_spray_system>(reg_, spray_emitter_,
+                    [](int const rate){ return std::min(rate + 1, (int)reactive_spray_system::max_particles);});
         else if (key_array[SDL_SCANCODE_DOWN])
-            manager::update_emitter_emission_rate<reactive_spray_system>(reg_, emitters_.front(), 10);
+            manager::update_emitter_emission_rate<reactive_spray_system>(reg_, spray_emitter_,
+                    [](int const rate) { return std::max(rate - 1, 0);});
 
-        // check if user changed emitter color
-        if (key_array[SDL_SCANCODE_LEFT])
+        // check if user changed emission color
+        if (key_array[SDL_SCANCODE_1])
             CURSOR_COLOR = color::red();
-        else if (key_array[SDL_SCANCODE_RIGHT])
+        else if (key_array[SDL_SCANCODE_2])
+            CURSOR_COLOR = color::orange();
+        else if (key_array[SDL_SCANCODE_3])
             CURSOR_COLOR = color::yellow();
+        else if (key_array[SDL_SCANCODE_4])
+            CURSOR_COLOR = color::green();
+        else if (key_array[SDL_SCANCODE_5])
+            CURSOR_COLOR = color::blue();
+        else if (key_array[SDL_SCANCODE_6])
+            CURSOR_COLOR = color::magenta();
 
-        // update mouse position
-        int x, y;
-        SDL_GetMouseState(&x, &y);
-        float const fx = float(x) / window_values::width::actual * window_values::width::logical;
-        float const fy = float(y) / window_values::height::actual * window_values::height::logical;
-        CURSOR_POSITION = {fx, fy};
+        // check if user is altering the snow system
+        if (key_array[SDL_SCANCODE_Q]) {
+            if (snow_emitter_ == entt::null)
+                snow_emitter_ = manager::create_emitter<snow_system>(reg_);
+        }
+        else if (key_array[SDL_SCANCODE_W]) {
+            if (snow_emitter_ != entt::null) {
+                manager::destroy_emitter<snow_system>(reg_, snow_emitter_);
+                snow_emitter_ = entt::null;
+            }
+        }
     }
 
     void update(std::chrono::duration<float> const dt) {
@@ -104,7 +136,8 @@ private:
     entt::registry reg_{};
     sdl::Window win_;
     sdl::Renderer ren_;
-    std::vector<entt::entity> emitters_;
+    entt::entity spray_emitter_ = entt::null;
+    entt::entity snow_emitter_ = entt::null;
     SDL_Event e_{};
     bool running_ = true;
 };
